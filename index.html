@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador Estadístico de Laboratorio</title>
+    <!-- CSS: TailwindCSS para diseño moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JS: Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- JS: MathJax para renderizado elegante de símbolos y fórmulas matemáticas -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-6">
+
+    <div class="max-w-5xl mx-auto bg-white p-8 rounded-xl shadow-md">
+        <h1 class="text-2xl font-bold text-blue-900 mb-2">Tratamiento de Datos de Laboratorio</h1>
+        <p class="text-sm text-gray-600 mb-6">Módulo de análisis: Exactitud, Precisión, Incertidumbre y Prueba Q de Dixon</p>
+
+        <!-- FORMULARIO DE ENTRADA -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="md:col-span-2">
+                <label class="block font-semibold text-gray-700 mb-1">Mediciones (separadas por coma):</label>
+                <input type="text" id="datosInput" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: 24.39, 24.20, 24.28, 25.10">
+            </div>
+            <div>
+                <label class="block font-semibold text-gray-700 mb-1">Valor Verdadero (\(X_{\text{real}}\)):</label>
+                <input type="number" id="vRealInput" step="any" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: 25.00">
+            </div>
+        </div>
+
+        <button onclick="procesarLaboratorio()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition duration-200">
+            Ejecutar Análisis Estadístico Completo
+        </button>
+
+        <!-- ALERTA DE PRUEBA Q -->
+        <div id="alertaQ" class="hidden mt-6 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-500 text-yellow-800"></div>
+
+        <!-- PANEL DE RESULTADOS EN TARJETAS -->
+        <div id="panelResultados" class="hidden grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Media (\(\bar{x}\))</span>
+                <p id="resMedia" class="text-xl font-extrabold text-blue-900">-</p>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Desv. Estándar (\(s\))</span>
+                <p id="resDesv" class="text-xl font-extrabold text-blue-900">-</p>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Coef. Variación (\(C_v\))</span>
+                <p id="resCv" class="text-xl font-extrabold text-blue-900">-</p>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Int. Confianza (95%)</span>
+                <p id="resIC" class="text-lg font-extrabold text-blue-900">-</p>
+            </div>
+        </div>
+
+        <!-- TABLA DE INCERTIDUMBRES INDIVIDUALES -->
+        <div id="seccionTabla" class="hidden mt-8">
+            <h2 class="text-lg font-bold mb-3 text-gray-700">Análisis Individual de Muestras</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-gray-100 border-b">
+                            <th class="p-2 border">Muestra</th>
+                            <th class="p-2 border">Medición (\(X_i\))</th>
+                            <th class="p-2 border">Incertidumbre Absoluta (\(|X_i - \bar{x}|\))</th>
+                            <th class="p-2 border">Incertidumbre Relativa (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuerpoTabla"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- GRÁFICO VISUAL -->
+        <div id="seccionGrafico" class="hidden mt-8">
+            <h2 class="text-lg font-bold mb-3 text-gray-700">Distribución y Dispersión de Datos</h2>
+            <div class="w-full h-64 bg-gray-50 p-4 rounded-lg border">
+                <canvas id="graficoDatos"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tablas estadísticas integradas
+        const qTabla90 = { 3: 0.941, 4: 0.765, 5: 0.642, 6: 0.560, 7: 0.507, 8: 0.468, 9: 0.437, 10: 0.412 };
+        const tStudent95 = { 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262 };
+        let miGrafico = null;
+
+        function procesarLaboratorio() {
+            let inputRaw = document.getElementById("datosInput").value;
+            let datos = inputRaw.split(',').map(n => parseFloat(n.trim())).filter(n => !isNaN(n));
+            let vReal = parseFloat(document.getElementById("vRealInput").value);
+
+            if (datos.length < 3) {
+                alert("Por favor ingresa al menos 3 datos numéricos válidos.");
+                return;
+            }
+
+            datos.sort((a, b) => a - b);
+            let nInicial = datos.length;
+
+            // 1. Prueba Q de Dixon
+            let alertaBox = document.getElementById("alertaQ");
+            if (nInicial <= 10) {
+                let x1 = datos[0];
+                let xn = datos[nInicial - 1];
+                let rango = xn - x1;
+                
+                if (rango > 0) {
+                    let qMin = Math.abs(datos[1] - x1) / rango;
+                    let qMax = Math.abs(xn - datos[nInicial - 2]) / rango;
+                    let qCrit = qTabla90[nInicial];
+
+                    alertaBox.classList.remove("hidden");
+                    if (qMax >= qMin && qMax >= qCrit) {
+    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico superior <strong>${xn}</strong> (Q_calc = ${qMax.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
+    datos.pop();
+} else if (qMin > qMax && qMin >= qCrit) {
+    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico inferior <strong>${x1}</strong> (Q_calc = ${qMin.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
+    datos.shift();
+} else {
+    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Todos los datos son retenidos. No se encontraron outliers.`;
+}
+                }
+            }
+
+            let n = datos.length;
+
+            // 2. Estadística descriptiva
+            let media = datos.reduce((a, b) => a + b, 0) / n;
+            let sumaVar = datos.reduce((a, b) => a + Math.pow(b - media, 2), 0);
+            let desv = Math.sqrt(sumaVar / (n - 1));
+            let cv = (desv / media) * 100;
+            let valorT = tStudent95[n] || 2.0;
+            let ic = valorT * (desv / Math.sqrt(n));
+
+            // Actualizar Tarjetas
+            document.getElementById("panelResultados").classList.remove("hidden");
+            document.getElementById("resMedia").innerText = media.toFixed(4);
+            document.getElementById("resDesv").innerText = desv.toFixed(4);
+            document.getElementById("resCv").innerText = cv.toFixed(2) + " %";
+            document.getElementById("resIC").innerText = `± ${ic.toFixed(4)}`;
+
+            // 3. Renderizar Tabla de Incertidumbres
+            let cuerpoTabla = document.getElementById("cuerpoTabla");
+            cuerpoTabla.innerHTML = "";
+            datos.forEach((x, i) => {
+                let incAbs = Math.abs(x - media);
+                let incRel = (incAbs / x) * 100;
+                cuerpoTabla.innerHTML += `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-2 border font-medium">Muestra ${i + 1}</td>
+                        <td class="p-2 border">${x.toFixed(4)}</td>
+                        <td class="p-2 border">${incAbs.toFixed(4)}</td>
+                        <td class="p-2 border">${incRel.toFixed(2)} %</td>
+                    </tr>`;
+            });
+            document.getElementById("seccionTabla").classList.remove("hidden");
+
+            // Renderizar notación matemática dinámicamente
+            if (window.MathJax) {
+                MathJax.typesetPromise();
+            }
+
+            // 4. Generar Gráfico con Chart.js
+            document.getElementById("seccionGrafico").classList.remove("hidden");
+            renderizarGrafico(datos, media, vReal);
+        }
+
+        function renderizarGrafico(datos, media, vReal) {
+            let ctx = document.getElementById('graficoDatos').getContext('2d');
+            
+            if (miGrafico) miGrafico.destroy();
+
+            let datasets = [
+                {
+                    label: 'Mediciones',
+                    data: datos.map((y, x) => ({ x: x + 1, y: y })),
+                    backgroundColor: 'rgba(37, 99, 235, 1)',
+                    borderColor: 'rgba(37, 99, 235, 1)',
+                    pointRadius: 6,
+                    type: 'scatter'
+                },
+                {
+                    label: 'Media (Promedio)',
+                    data: datos.map((_, x) => ({ x: x + 1, y: media })),
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    borderDash: [5, 5],
+                    type: 'line',
+                    pointRadius: 0
+                }
+            ];
+
+            if (!isNaN(vReal)) {
+                datasets.push({
+                    label: 'Valor Verdadero',
+                    data: datos.map((_, x) => ({ x: x + 1, y: vReal })),
+                    borderColor: 'rgba(239, 68, 68, 1)',
+                    type: 'line',
+                    pointRadius: 0
+                });
+            }
+
+            miGrafico = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Número de Ensayo' } },
+                        y: { title: { display: true, text: 'Valor Medido' } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
