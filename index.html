@@ -36,11 +36,19 @@
         <!-- ALERTA DE PRUEBA Q -->
         <div id="alertaQ" class="hidden mt-6 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-500 text-yellow-800"></div>
 
-        <!-- PANEL DE RESULTADOS EN TARJETAS -->
-        <div id="panelResultados" class="hidden grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+        <!-- PANEL DE RESULTADOS EN TARJETAS (MEDIDAS DE PRECISIÓN Y TENDENCIA CENTRAL) -->
+        <div id="panelResultados" class="hidden grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
             <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
                 <span class="text-xs text-gray-500 uppercase font-bold">Media (\(\bar{x}\))</span>
                 <p id="resMedia" class="text-xl font-extrabold text-blue-900">-</p>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Mediana</span>
+                <p id="resMediana" class="text-xl font-extrabold text-blue-900">-</p>
+            </div>
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
+                <span class="text-xs text-gray-500 uppercase font-bold">Moda</span>
+                <p id="resModa" class="text-base font-extrabold text-blue-900">-</p>
             </div>
             <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
                 <span class="text-xs text-gray-500 uppercase font-bold">Desv. Estándar (\(s\))</span>
@@ -53,6 +61,18 @@
             <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-center">
                 <span class="text-xs text-gray-500 uppercase font-bold">Int. Confianza (95%)</span>
                 <p id="resIC" class="text-lg font-extrabold text-blue-900">-</p>
+            </div>
+        </div>
+
+        <!-- PANEL DE RESULTADOS DE EXACTITUD (ERRORES) -->
+        <div id="panelExactitud" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-center">
+                <span class="text-xs text-emerald-700 uppercase font-bold">Error Absoluto (\(E_{\text{abs}}\))</span>
+                <p id="resErrAbs" class="text-xl font-extrabold text-emerald-900">-</p>
+            </div>
+            <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-center">
+                <span class="text-xs text-emerald-700 uppercase font-bold">Error Relativo Porcentual (\(\%E_{\text{rel}}\))</span>
+                <p id="resErrRel" class="text-xl font-extrabold text-emerald-900">-</p>
             </div>
         </div>
 
@@ -89,6 +109,29 @@
         const tStudent95 = { 2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262 };
         let miGrafico = null;
 
+        function calcularMediana(arr) {
+            let n = arr.length;
+            if (n % 2 !== 0) {
+                return arr[Math.floor(n / 2)];
+            } else {
+                return (arr[n / 2 - 1] + arr[n / 2]) / 2;
+            }
+        }
+
+        function calcularModa(arr) {
+            let frecuencias = {};
+            let maxFreq = 0;
+            arr.forEach(val => {
+                let key = val.toFixed(4);
+                frecuencias[key] = (frecuencias[key] || 0) + 1;
+                if (frecuencias[key] > maxFreq) maxFreq = frecuencias[key];
+            });
+
+            if (maxFreq === 1) return "No hay";
+            let modas = Object.keys(frecuencias).filter(k => frecuencias[k] === maxFreq);
+            return modas.join(", ");
+        }
+
         function procesarLaboratorio() {
             let inputRaw = document.getElementById("datosInput").value;
             let datos = inputRaw.split(',').map(n => parseFloat(n.trim())).filter(n => !isNaN(n));
@@ -116,14 +159,14 @@
 
                     alertaBox.classList.remove("hidden");
                     if (qMax >= qMin && qMax >= qCrit) {
-    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico superior <strong>${xn}</strong> (Q_calc = ${qMax.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
-    datos.pop();
-} else if (qMin > qMax && qMin >= qCrit) {
-    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico inferior <strong>${x1}</strong> (Q_calc = ${qMin.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
-    datos.shift();
-} else {
-    alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Todos los datos son retenidos. No se encontraron outliers.`;
-}
+                        alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico superior <strong>${xn}</strong> (Q_calc = ${qMax.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
+                        datos.pop();
+                    } else if (qMin > qMax && qMin >= qCrit) {
+                        alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Se ha descartado el dato atípico inferior <strong>${x1}</strong> (Q_calc = ${qMin.toFixed(3)} ≥ Q_tabla = ${qCrit}).`;
+                        datos.shift();
+                    } else {
+                        alertaBox.innerHTML = `<strong>Prueba Q de Dixon (90%):</strong> Todos los datos son retenidos. No se encontraron outliers.`;
+                    }
                 }
             }
 
@@ -131,20 +174,38 @@
 
             // 2. Estadística descriptiva
             let media = datos.reduce((a, b) => a + b, 0) / n;
+            let mediana = calcularMediana(datos);
+            let moda = calcularModa(datos);
+
             let sumaVar = datos.reduce((a, b) => a + Math.pow(b - media, 2), 0);
             let desv = Math.sqrt(sumaVar / (n - 1));
             let cv = (desv / media) * 100;
             let valorT = tStudent95[n] || 2.0;
             let ic = valorT * (desv / Math.sqrt(n));
 
-            // Actualizar Tarjetas
+            // Actualizar Tarjetas Principales
             document.getElementById("panelResultados").classList.remove("hidden");
             document.getElementById("resMedia").innerText = media.toFixed(4);
+            document.getElementById("resMediana").innerText = mediana.toFixed(4);
+            document.getElementById("resModa").innerText = moda;
             document.getElementById("resDesv").innerText = desv.toFixed(4);
             document.getElementById("resCv").innerText = cv.toFixed(2) + " %";
             document.getElementById("resIC").innerText = `± ${ic.toFixed(4)}`;
 
-            // 3. Renderizar Tabla de Incertidumbres
+            // 3. Evaluación de Exactitud (Errores)
+            let panelExactitud = document.getElementById("panelExactitud");
+            if (!isNaN(vReal)) {
+                let errAbs = Math.abs(media - vReal);
+                let errRel = (errAbs / vReal) * 100;
+                
+                document.getElementById("resErrAbs").innerText = errAbs.toFixed(4);
+                document.getElementById("resErrRel").innerText = errRel.toFixed(2) + " %";
+                panelExactitud.classList.remove("hidden");
+            } else {
+                panelExactitud.classList.add("hidden");
+            }
+
+            // 4. Renderizar Tabla de IncertidUMBRES
             let cuerpoTabla = document.getElementById("cuerpoTabla");
             cuerpoTabla.innerHTML = "";
             datos.forEach((x, i) => {
@@ -165,7 +226,7 @@
                 MathJax.typesetPromise();
             }
 
-            // 4. Generar Gráfico con Chart.js
+            // 5. Generar Gráfico con Chart.js
             document.getElementById("seccionGrafico").classList.remove("hidden");
             renderizarGrafico(datos, media, vReal);
         }
